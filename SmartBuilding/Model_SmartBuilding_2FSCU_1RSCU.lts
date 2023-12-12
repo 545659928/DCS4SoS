@@ -1,0 +1,198 @@
+const N = 2 // The number of FireCU
+const M = 1 // The number of RoomCU
+
+range FCUID = 1 .. N
+range RCUID = 1 .. M
+
+set Sensors = {sensor[FCUID]}
+set Alarms = {alarm[FCUID]}
+set Sprinklers = {sprinkler[FCUID]}
+set FCUs = {fcu[FCUID]}
+set MotionSensors = {ms[RCUID]}
+set Lights = {light[RCUID]}
+
+set SensorDetectActions = {Sensors.detected, Sensors.undetected}
+set SensorSendActions = {Sensors.send_detected, Sensors.send_undetected}
+set SensorActions = {SensorDetectActions, SensorSendActions}
+
+set AlarmActions = {Alarms.on, Alarms.off}
+
+set SprinklerActions = {Sprinklers.on, Sprinklers.off}
+
+set FCUActions = {FCUs.notify}
+
+set MotionSensorDetectActions = {MotionSensors.detected, MotionSensors.undetected_10min}
+set MotionSensorSendActions = {MotionSensors.send_detected, MotionSensors.send_undetected}
+set MotionSensorActions = {MotionSensorDetectActions, MotionSensorSendActions}
+
+set LightActions = {Lights.on, Lights.off}
+
+set BCUActions = {bcu.req_on[FCUID], bcu.req_off, bcu.turn_off_alarm}
+
+set AllActions = {SensorActions, AlarmActions, SprinklerActions, FCUActions, MotionSensorActions, LightActions, BCUActions}
+
+set UnControllableActions = {SensorDetectActions, MotionSensorDetectActions}
+set ControllableActions = {{AllActions}\{UnControllableActions}}
+
+/*********************************************************************
+ Fire System Control Unit
+*********************************************************************/
+//Sensor
+Sensor(ID=0) = STANDBY,
+STANDBY = (
+	sensor[ID].detected -> sensor[ID].send_detected -> STANDBY|
+	sensor[ID].undetected -> sensor[ID].send_undetected -> STANDBY).
+
+//Alarm
+Alarm(ID=0) = STANDBY,
+STANDBY = (
+	alarm[ID].on -> alarm[ID].off -> STANDBY).
+
+//Sprinkler
+Sprinkler(ID=0) = STANDBY,
+STANDBY = (
+	sprinkler[ID].on -> sprinkler[ID].off -> STANDBY
+).
+
+//FireCU
+FireCU(ID=0) = STANDBY,
+STANDBY = (bcu.req_on[ID] -> STANDBY
+			|bcu.req_off -> STANDBY
+			|sensor[ID].send_detected -> fcu[ID].notify -> STANDBY).
+
+/****************************/
+fluent SENSOR_DETECTED_1 = <sensor[1].detected, bcu.req_off>
+fluent FIRECU_REQUESTED_ON_1 = <bcu.req_on[1], bcu.req_off>
+fluent FIRECU_REQUESTED_OFF_1 = <bcu.req_off, {sensor[1].detected, bcu.req_on[1]}>
+
+ltl_property DO_NOT_ALARM_1 = [](!(SENSOR_DETECTED_1 || FIRECU_REQUESTED_ON_1) -> !alarm[1].on)
+ltl_property DO_NOT_SPRINKLE_1 = [](!SENSOR_DETECTED_1 -> !sprinkler[1].on)
+ltl_property DO_NOT_TURN_OFF_1 = [](!FIRECU_REQUESTED_OFF_1 -> !{alarm[1].off, sprinkler[1].off})
+
+controllerSpec Spec_FCU_1 =
+{
+	safety       = {DO_NOT_ALARM_1,
+					DO_NOT_SPRINKLE_1,
+					DO_NOT_TURN_OFF_1}
+	liveness     = {}
+	controllable = {ControllableActions}
+}
+||Env_FCU_1 = (Sensor(1) || Alarm(1) || Sprinkler(1) || FireCU(1)).
+controller ||C_FCU_1 = (Env_FCU_1)~{Spec_FCU_1}.
+/****************************/
+fluent SENSOR_DETECTED_2 = <sensor[2].detected, bcu.req_off>
+fluent FIRECU_REQUESTED_ON_2 = <bcu.req_on[2], bcu.req_off>
+fluent FIRECU_REQUESTED_OFF_2 = <bcu.req_off, {sensor[2].detected, bcu.req_on[2]}>
+
+ltl_property DO_NOT_ALARM_2 = [](!(SENSOR_DETECTED_2 || FIRECU_REQUESTED_ON_2) -> !alarm[2].on)
+ltl_property DO_NOT_SPRINKLE_2 = [](!SENSOR_DETECTED_2 -> !sprinkler[2].on)
+ltl_property DO_NOT_TURN_OFF_2 = [](!FIRECU_REQUESTED_OFF_2 -> !{alarm[2].off, sprinkler[2].off})
+
+controllerSpec Spec_FCU_2 =
+{
+	safety       = {DO_NOT_ALARM_2,
+					DO_NOT_SPRINKLE_2,
+					DO_NOT_TURN_OFF_2}
+	liveness     = {}
+	controllable = {ControllableActions}
+}
+||Env_FCU_2 = (Sensor(2) || Alarm(2) || Sprinkler(2) || FireCU(2)).
+controller ||C_FCU_2 = (Env_FCU_2)~{Spec_FCU_2}.
+/****************************/
+
+/*********************************************************************
+ Room Control Unit
+*********************************************************************/
+//MotionSensor
+MotionSensor(ID=0) = STANDBY,
+STANDBY = (
+	ms[ID].detected -> ms[ID].send_detected -> STANDBY|
+	ms[ID].undetected_10min -> ms[ID].send_undetected -> STANDBY
+).
+
+//Light
+Light(ID=0) = STANDBY,
+STANDBY = (
+	{light[ID].on,light[ID].off} -> STANDBY
+).
+
+//RoomCU
+RoomCU(ID=0) = STANDBY,
+STANDBY = (
+	ms[ID].send_detected -> STATE_DETECT|
+	ms[ID].send_undetected -> STANDBY
+),
+STATE_DETECT = (
+	light[ID].on -> STATE_ON|
+	light[ID].off -> STANDBY
+),
+STATE_ON = (
+	ms[ID].send_undetected -> STATE_UNDETECT|
+	ms[ID].send_detected -> STATE_ON
+),
+STATE_UNDETECT = (
+	light[ID].on -> STATE_ON|
+	light[ID].off -> STANDBY
+).
+
+/****************************/
+fluent TIMING_NOT_TURN_OFF_1 = <ms[1].send_detected, {light[1].on, ms[1].send_undetected}> 
+fluent TIMING_NOT_TURN_ON_1 = <ms[1].send_undetected, {light[1].off, ms[1].send_detected}> 
+
+ltl_property DO_NOT_TURN_OFF_LIGHT_1 = [](TIMING_NOT_TURN_OFF_1 -> !light[1].off)
+ltl_property DO_NOT_TURN_ON_LIGHT_1 = [](TIMING_NOT_TURN_ON_1 -> !light[1].on)
+
+controllerSpec Spec_RCU_1 =
+{
+	safety       = {DO_NOT_TURN_OFF_LIGHT_1, DO_NOT_TURN_ON_LIGHT_1}
+	liveness     = {}
+	controllable = {ControllableActions}
+}
+||Env_RCU_1 = (MotionSensor(1) || Light(1) || RoomCU(1)).
+controller ||C_RCU_1 = (Env_RCU_1)~{Spec_RCU_1}.
+/****************************/
+fluent TIMING_NOT_TURN_OFF_2 = <ms[2].send_detected, {light[2].on, ms[2].send_undetected}> 
+fluent TIMING_NOT_TURN_ON_2 = <ms[2].send_undetected, {light[2].off, ms[2].send_detected}> 
+
+ltl_property DO_NOT_TURN_OFF_LIGHT_2 = [](TIMING_NOT_TURN_OFF_2 -> !light[2].off)
+ltl_property DO_NOT_TURN_ON_LIGHT_2 = [](TIMING_NOT_TURN_ON_2 -> !light[2].on)
+
+controllerSpec Spec_RCU_2 =
+{
+	safety       = {DO_NOT_TURN_OFF_LIGHT_2, DO_NOT_TURN_ON_LIGHT_2}
+	liveness     = {}
+	controllable = {ControllableActions}
+}
+||Env_RCU_2 = (MotionSensor(2) || Light(2) || RoomCU(2)).
+controller ||C_RCU_2 = (Env_RCU_2)~{Spec_RCU_2}.
+/****************************/
+
+/*********************************************************************
+Building Controll Unit
+*********************************************************************/
+//BuildingCU
+BuildingCU = (bcu.req_on[FCUID] -> BuildingCU
+			|bcu.turn_off_alarm -> bcu.req_off -> BuildingCU).
+
+fluent BCU_NOTIFIED_1 = <fcu[1].notify, fcu[2].notify>
+fluent BCU_NOTIFIED_2 = <fcu[2].notify, fcu[1].notify>
+fluent BCU_SEND_REQUEST_1 = <bcu.req_on[1], fcu[FCUID].notify>
+fluent BCU_SEND_REQUEST_2 = <bcu.req_on[2], fcu[FCUID].notify>
+
+ltl_property DO_NOT_SEND_REQ_WHILE_NOT_NOTIFIED_1 = [](!BCU_NOTIFIED_1 -> !bcu.req_on[2])
+ltl_property DO_NOT_SEND_REQ_WHILE_NOT_NOTIFIED_2 = [](!BCU_NOTIFIED_2 -> !bcu.req_on[1])
+ltl_property DO_NOT_SEND_REQ_ONCE_SENT_1 = [](BCU_SEND_REQUEST_1 -> X (!bcu.req_on[1]))
+ltl_property DO_NOT_SEND_REQ_ONCE_SENT_2 = [](BCU_SEND_REQUEST_2 -> X (!bcu.req_on[2]))
+
+controllerSpec Spec_BCU =
+{
+	safety       = {DO_NOT_SEND_REQ_WHILE_NOT_NOTIFIED_1,
+					DO_NOT_SEND_REQ_WHILE_NOT_NOTIFIED_2,
+					DO_NOT_SEND_REQ_ONCE_SENT_1,
+					DO_NOT_SEND_REQ_ONCE_SENT_2}
+	liveness     = {}
+	controllable = {ControllableActions}
+}
+||Env_BCU = (BuildingCU || C_FCU_1 || C_FCU_2 || C_RCU_1).
+controller ||Controller_BCU = (Env_BCU)~{Spec_BCU}.
+

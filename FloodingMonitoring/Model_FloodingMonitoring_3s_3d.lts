@@ -1,0 +1,160 @@
+/* Manager */
+set ManagerRecieveActions = {
+    manager_recieve_info_A,
+    manager_recieve_info_C,
+    manager_recieve_info_D
+}
+set ManagerRequestActions = {
+    req_move_A, done_move_A,
+    req_move_C, done_move_C,
+    req_move_D, done_move_D
+}
+set ManagerRecognizeActions = {
+    recognized_info_A,
+    recognized_info_C,
+    recognized_info_D
+}
+set ManagerActions = {ManagerRecieveActions,ManagerRequestActions,ManagerRequestActions}
+
+/* Sensor */
+set SensorDetectActions = {
+    sensor_A_detected, sensor_A_detect_error,
+    sensor_C_detected, sensor_C_detect_error,
+    sensor_D_detected, sensor_D_detect_error
+}
+set SensorSendActions = {
+    sensor_A_send_M,
+    sensor_C_send_M,
+    sensor_D_send_AM,
+    sensor_D_send_BCM
+}
+set SensorErrorActions = {
+    sensor_A_error,
+    sensor_C_error,
+    sensor_D_error
+}
+set SensorActions = {SensorDetectActions, SensorSendActions, SensorErrorActions}
+
+/* Drone */ 
+set DroneActions = {
+    drone_A_move,
+    drone_C_move,
+    drone_D_move
+}
+
+set AllActions = {ManagerActions, SensorActions, DroneActions}
+set UnControllableActions = {ManagerRecieveActions, SensorDetectActions}
+set ControllableActions = {{AllActions}\{UnControllableActions}}
+
+// 各センサーノードを利用する経路の集合
+set Paths_with_A = {sensor_D_send_AM}
+//set Paths_with_D = {}
+
+
+/*********************************************************************
+ Environments (LTS)
+*********************************************************************/
+
+Sensor_A = (
+    sensor_A_detected -> sensor_A_send_M -> manager_recieve_info_A -> Sensor_A
+    |sensor_A_detect_error -> Sensor_A_ERROR
+),
+Sensor_A_ERROR = (
+    sensor_A_error -> Sensor_A_ERROR
+).
+
+Sensor_C = (
+    sensor_C_detected -> sensor_C_send_M -> manager_recieve_info_C -> Sensor_C
+    |sensor_C_detect_error -> Sensor_C_ERROR
+),
+Sensor_C_ERROR = (
+    sensor_C_error -> Sensor_C_ERROR
+).
+
+Sensor_D = (
+    sensor_D_detected -> {sensor_D_send_AM, sensor_D_send_BCM} -> manager_recieve_info_D -> Sensor_D
+    |sensor_D_detect_error -> Sensor_D_ERROR
+),
+Sensor_D_ERROR = (
+    sensor_D_error -> Sensor_D_ERROR
+).
+
+Drone_A = (
+    drone_A_move -> Drone_A
+).
+Drone_B = (
+    drone_B_move -> Drone_B
+).
+Drone_C = (
+    drone_C_move -> Drone_C
+).
+Drone_D = (
+    drone_D_move -> Drone_D
+).
+
+Manager = (
+    manager_recieve_info_A -> recognized_info_A -> Manager
+    |manager_recieve_info_C -> recognized_info_C -> Manager
+    |manager_recieve_info_D -> recognized_info_D -> Manager
+    |req_move_A -> done_move_A -> Manager
+    |req_move_C -> done_move_C -> Manager
+    |req_move_D -> done_move_D -> Manager
+).
+
+||Environment = (Manager || Sensor_A || Sensor_C || Sensor_D || Drone_A || Drone_C || Drone_D).
+
+
+/*********************************************************************
+ Requirements (FLTL)
+*********************************************************************/
+
+fluent SENSOR_A_ERROR = <sensor_A_detect_error, sensor_A_detected>
+fluent SENSOR_C_ERROR = <sensor_C_detect_error, sensor_C_detected>
+fluent SENSOR_D_ERROR = <sensor_D_detect_error, sensor_D_detected>
+
+fluent REQ_MOVE_TIMING_A = <recognized_info_A, drone_A_move>
+fluent REQ_MOVE_TIMING_C = <recognized_info_C, drone_C_move>
+fluent REQ_MOVE_TIMING_D = <recognized_info_D, drone_D_move>
+
+fluent DRONE_A_MOVABLE = <req_move_A, done_move_A>
+fluent DRONE_C_MOVABLE = <req_move_C, done_move_C>
+fluent DRONE_D_MOVABLE = <req_move_D, done_move_D>
+
+fluent NOT_DONE_MOVE_A = <req_move_A, drone_A_move>
+fluent NOT_DONE_MOVE_C = <req_move_C, drone_C_move>
+fluent NOT_DONE_MOVE_D = <req_move_D, drone_D_move>
+
+ltl_property DO_NOT_USE_IN_ERROR_A = [](SENSOR_A_ERROR -> !{Paths_with_A})
+//ltl_property DO_NOT_USE_IN_ERROR_C = [](SENSOR_C_ERROR -> !{Paths_with_C})
+//ltl_property DO_NOT_USE_IN_ERROR_D = [](SENSOR_D_ERROR -> !Paths_with_D)
+
+ltl_property DO_NOT_REQ_MOVE_A = [](!(REQ_MOVE_TIMING_A || SENSOR_A_ERROR) -> !req_move_A)
+ltl_property DO_NOT_REQ_MOVE_C = [](!(REQ_MOVE_TIMING_C || SENSOR_C_ERROR) -> !req_move_C)
+ltl_property DO_NOT_REQ_MOVE_D = [](!(REQ_MOVE_TIMING_D || SENSOR_D_ERROR) -> !req_move_D)
+
+ltl_property DO_NOT_MOVE_A = [](!DRONE_A_MOVABLE -> !drone_A_move)
+ltl_property DO_NOT_MOVE_C = [](!DRONE_C_MOVABLE -> !drone_C_move)
+ltl_property DO_NOT_MOVE_D = [](!DRONE_D_MOVABLE -> !drone_D_move)
+
+ltl_property DO_NOT_DONE_MOVE_A = [](NOT_DONE_MOVE_A -> !done_move_A)
+ltl_property DO_NOT_DONE_MOVE_C = [](NOT_DONE_MOVE_C -> !done_move_C)
+ltl_property DO_NOT_DONE_MOVE_D = [](NOT_DONE_MOVE_D -> !done_move_D)
+
+controllerSpec Specification =
+{
+	safety       = {
+        DO_NOT_USE_IN_ERROR_A,
+        DO_NOT_REQ_MOVE_A,
+        DO_NOT_REQ_MOVE_C,
+        DO_NOT_REQ_MOVE_D,
+        DO_NOT_MOVE_A,
+        DO_NOT_MOVE_C,
+        DO_NOT_MOVE_D,
+        DO_NOT_DONE_MOVE_A,
+        DO_NOT_DONE_MOVE_C,
+        DO_NOT_DONE_MOVE_D
+    }
+	liveness     = {}
+	controllable = {ControllableActions}
+}
+controller ||Controller = (Environment)~{Specification}.

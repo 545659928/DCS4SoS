@@ -1,0 +1,114 @@
+// Actions
+// Photo Mission Center(PMC)
+set PMCSendAction = {pmc_send_request}
+set PMCRecieveAction = {pmc_recieve_data}
+set PMCAction = {PMCSendAction, PMCRecieveAction}
+
+// Weather Mission Center(WMC)
+set WMCSendAction = {wmc_send_request}
+set WMCRecieveAction = {wmc_recieve_data}
+set WMCAction = {WMCSendAction, WMCRecieveAction}
+
+// Command and Controll Center(C2)
+set C2RecieveAction = {c2_recieve_photo_req, c2_recieve_weather_req}
+set C2SendAction = {c2_send_photo_command, c2_send_weather_command}
+set C2Action = {C2RecieveAction, C2SendAction}
+
+// Ground Station(GS)
+set GSRecieveCommandAction = {gs_recieve_photo_command,gs_recieve_weather_command}
+set GSRecieveDataStartAction = {gs_recieve_photo_data_start,gs_recieve_weather_data_start}
+set GSRecieveDataEndAction = {gs_recieve_photo_data_end,gs_recieve_weather_data_end}
+set GSSendCommandAction = {gs_send_photo_command,gs_send_weather_command}
+set GSSendDataAction = {gs_send_photo_data,gs_send_weather_data}
+set GSSchedulingAction = {gs_communication_available, gs_communication_unavailable}
+set GSAction = {GSRecieveCommandAction,GSRecieveDataStartAction,GSRecieveDataEndAction,GSSendCommandAction,GSSendDataAction,GSSchedulingAction,gs_recieve_data_ready}
+
+// Photo Satellite(PS)
+set PSRecieveAction = {ps_recieve_command}
+set PSSendAction = {ps_send_data}
+set PSAction = {PSRecieveAction,PSSendAction}
+
+// Weather Satellite(WS)
+set WSRecieveAction = {ws_recieve_command}
+set WSSendAction = {ws_send_data}
+set WSAction = {WSRecieveAction,WSSendAction}
+
+set AllAction = {PMCAction,WMCAction,C2Action,GSAction,PSAction,WSAction}
+set UnControllableAction = {PMCRecieveAction,WMCRecieveAction,C2RecieveAction,GSRecieveCommandAction,GSRecieveDataEndAction,GSSchedulingAction,PSRecieveAction,WSRecieveAction}
+set ControllableAction = {{AllAction}\{UnControllableAction}}
+
+
+/*********************************************************************
+ Environments (LTS)
+*********************************************************************/
+
+PhotoMissionCenter = (
+    pmc_send_request -> c2_recieve_photo_req -> PhotoMissionCenter|
+    pmc_recieve_data -> PhotoMissionCenter
+).
+
+WeatherMissionCenter = (
+    wmc_send_request -> c2_recieve_weather_req -> WeatherMissionCenter|
+    wmc_recieve_data -> wmc_analyze_data ->WeatherMissionCenter
+).
+
+CommandControlCenter = (
+    c2_recieve_photo_req -> c2_send_photo_command -> gs_recieve_photo_command -> CommandControlCenter|
+    c2_recieve_weather_req -> c2_send_weather_command -> gs_recieve_weather_command -> CommandControlCenter
+).
+
+GroundStation = (
+    {gs_communication_available, gs_communication_unavailable} -> GroundStation|
+    {gs_recieve_photo_command, gs_recieve_weather_command} -> GroundStation|
+    gs_send_photo_command -> ps_recieve_command -> GroundStation|
+    gs_send_weather_command -> ws_recieve_command -> GroundStation|
+    gs_recieve_data_ready -> STATE_RECIEVE_READY
+
+),
+STATE_RECIEVE_READY = (
+    gs_recieve_photo_data_start -> gs_recieve_photo_data_end -> gs_send_photo_data -> pmc_recieve_data -> GroundStation|
+    gs_recieve_weather_data_start -> gs_recieve_weather_data_end -> gs_send_weather_data -> wmc_recieve_data -> GroundStation
+).
+
+PhotoSatellite = (
+    ps_recieve_command -> ps_send_data -> gs_recieve_photo_data_start -> PhotoSatellite
+).
+
+WeatherSatellite = (
+    ws_recieve_command -> ws_send_data -> gs_recieve_weather_data_start -> WeatherSatellite
+).
+
+||PhotoMissionEnv = (PhotoMissionCenter || CommandControlCenter || GroundStation || PhotoSatellite).
+||WeatherMissionEnv = (WeatherMissionCenter || CommandControlCenter || GroundStation || WeatherSatellite).
+
+/*********************************************************************
+ Requirements (FLTL)
+*********************************************************************/
+
+fluent TIMING_COMMUNICATION_AVAILABLE = <gs_communication_available, gs_communication_unavailable>
+fluent TIMING_GS_CAN_SEND_PHOTO_COMMAND = <gs_recieve_photo_command, ps_recieve_command>
+fluent TIMING_GS_CAN_SEND_WEATHER_COMMAND = <gs_recieve_weather_command, ws_recieve_command>
+fluent TIMING_GS_RECIEVE_PHOTO_DATA = <gs_recieve_photo_data_start, gs_recieve_photo_data_end>
+fluent TIMING_GS_RECIEVE_WEATHER_DATA = <gs_recieve_weather_data_start, gs_recieve_weather_data_end>
+
+ltl_property DO_NOT_COMMUNICATE_WHILE_UNAVAILABLE = [](!TIMING_COMMUNICATION_AVAILABLE -> !{GSSendCommandAction,gs_recieve_data_ready})
+ltl_property GS_DO_NOT_SEND_PHOTO_COMMAND = [](!TIMING_GS_CAN_SEND_PHOTO_COMMAND -> !gs_send_photo_command)
+ltl_property GS_DO_NOT_SEND_WEATHER_COMMAND = [](!TIMING_GS_CAN_SEND_WEATHER_COMMAND -> !gs_send_weather_command)
+ltl_property GS_DO_NOT_RECIEVE_PHOTO_DATA = [](TIMING_GS_RECIEVE_WEATHER_DATA -> !gs_recieve_photo_data_start)
+ltl_property GS_DO_NOT_RECIEVE_WEATHER_DATA = [](TIMING_GS_RECIEVE_PHOTO_DATA -> !gs_recieve_weather_data_start)
+
+controllerSpec Specification =
+{
+	safety       = {
+        DO_NOT_COMMUNICATE_WHILE_UNAVAILABLE,
+        GS_DO_NOT_SEND_PHOTO_COMMAND,
+        GS_DO_NOT_SEND_WEATHER_COMMAND,
+        GS_DO_NOT_RECIEVE_PHOTO_DATA,
+        GS_DO_NOT_RECIEVE_WEATHER_DATA
+    }
+	liveness     = {}
+	controllable = {ControllableAction}
+}
+
+controller ||PhotoMissionController = (PhotoMissionEnv)~{Specification}.
+controller ||WeatherMissionController = (WeatherMissionEnv)~{Specification}.
