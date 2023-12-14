@@ -1,8 +1,11 @@
 # DCS4SoS
 
+## MTSA
 the extended version of MTSA (that supports stepwise synthesis from its original version) can be found at: https://drive.google.com/file/d/1lQCLG85gD6IBsb2OC3D090br85N9kuCe/view?usp=sharing
 
+Offical Guide of MTSA: https://mtsa.dc.uba.ar/
 
+## Experiment models
 "Model" refers to the designed domain models and requirements.
 
 "Controller" refers to the synthesized controller.
